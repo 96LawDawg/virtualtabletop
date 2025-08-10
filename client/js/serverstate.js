@@ -599,7 +599,7 @@ function receiveAwaitInput(args) {
   awaitingInputID = args.id;
   awaitingInputPlayers = args.players || [];
   $('#waitingInputMessage').textContent = `Waiting on input from ${awaitingInputPlayers.join(', ')}`;
-  showOverlay('waitingInputOverlay');
+  showOverlay('waitingInputOverlay', true);
 }
 
 function receiveInputFinished(args) {
@@ -647,10 +647,15 @@ function receiveInputResult(args) {
   if(!pending)
     return;
   pendingInputRequests.delete(args.id);
-  const collections = {};
-  for(const key in (args.collections || {}))
-    collections[key] = (args.collections[key] || []).map(id=>widgets.get(id)).filter(Boolean);
-  pending.resolve({ variables: args.variables || {}, collections });
+  const responses = {};
+  for(const name in (args.responses || {})) {
+    const r = args.responses[name] || {};
+    const collections = {};
+    for(const key in (r.collections || {}))
+      collections[key] = (r.collections[key] || []).map(id=>widgets.get(id)).filter(Boolean);
+    responses[name] = { variables: r.variables || {}, collections };
+  }
+  pending.resolve(responses);
 }
 
 function receiveInputCanceled(args) {

@@ -1421,11 +1421,27 @@ export class Widget extends StateManaged {
         setDefaults(a, { player: playerName });
         const players = Array.isArray(a.player) ? a.player : [ a.player ];
         try {
-          const result = (players.length === 1 && players[0] === playerName)
-            ? await this.showInputOverlay(a, widgets, variables, collections, getCollection, problems)
-            : await requestInputFromPlayer(players, this.get('id'), a, variables, collections);
-          Object.assign(variables, result.variables);
-          Object.assign(collections, result.collections);
+          if(players.length === 1 && players[0] === playerName) {
+            const result = await this.showInputOverlay(a, widgets, variables, collections, getCollection, problems);
+            Object.assign(variables, result.variables);
+            Object.assign(collections, result.collections);
+          } else {
+            const responses = await requestInputFromPlayer(players, this.get('id'), a, variables, collections);
+            variables.results = {};
+            for(const [name, res] of Object.entries(responses)) {
+              variables.results[name] = res.variables || {};
+              for(const [v, value] of Object.entries(res.variables || {})) {
+                if(typeof variables[v] !== 'object' || variables[v] === null)
+                  variables[v] = {};
+                variables[v][name] = value;
+              }
+              for(const [c, list] of Object.entries(res.collections || {})) {
+                if(typeof collections[c] !== 'object' || collections[c] === null)
+                  collections[c] = {};
+                collections[c][name] = list;
+              }
+            }
+          }
           if(jeRoutineLogging) {
             let varList = [];
             let valueList = [];

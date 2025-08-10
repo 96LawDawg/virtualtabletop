@@ -845,7 +845,7 @@ export default class Room {
       player.send('inputCanceled', { id: args.id });
       return;
     }
-    const pending = { requester: player, remaining: new Set(targets), variables: {}, collections: {} };
+    const pending = { requester: player, remaining: new Set(targets), responses: {} };
     this.pendingInputs.set(args.id, pending);
     const targetNames = targets.map(p => p.name);
     for(const p of this.players)
@@ -865,11 +865,10 @@ export default class Room {
     const pending = this.pendingInputs.get(args.id);
     if(!pending || !pending.remaining.has(player))
       return;
-    Object.assign(pending.variables, args.variables);
-    Object.assign(pending.collections, args.collections);
+    pending.responses[player.name] = { variables: args.variables, collections: args.collections };
     pending.remaining.delete(player);
     if(pending.remaining.size === 0) {
-      pending.requester.send('inputResult', { id: args.id, variables: pending.variables, collections: pending.collections });
+      pending.requester.send('inputResult', { id: args.id, responses: pending.responses });
       for(const p of this.players)
         p.send('inputFinished', { id: args.id });
       this.pendingInputs.delete(args.id);
