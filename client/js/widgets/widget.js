@@ -1419,37 +1419,28 @@ export class Widget extends StateManaged {
 
       if(a.func == 'INPUT') {
         setDefaults(a, { player: playerName });
-        if(a.player && a.player !== playerName) {
-          try {
-            const result = await requestInputFromPlayer(a.player, this.get('id'), a, variables, collections);
-            Object.assign(variables, result.variables);
-            Object.assign(collections, result.collections);
-          } catch(e) {
-            abortRoutine = true;
-            if(jeRoutineLogging)
-              jeLoggingRoutineOperationSummary("INPUT cancelled");
+        const players = Array.isArray(a.player) ? a.player : [ a.player ];
+        try {
+          const result = (players.length === 1 && players[0] === playerName)
+            ? await this.showInputOverlay(a, widgets, variables, collections, getCollection, problems)
+            : await requestInputFromPlayer(players, this.get('id'), a, variables, collections);
+          Object.assign(variables, result.variables);
+          Object.assign(collections, result.collections);
+          if(jeRoutineLogging) {
+            let varList = [];
+            let valueList = [];
+            a.fields.forEach(f=>{
+              if(f.variable) {
+                varList.push(f.variable);
+                valueList.push(JSON.stringify(variables[f.variable]));
+              }
+            });
+            jeLoggingRoutineOperationSummary(`${varList.join(', ')}`,`${valueList.join(', ')}`);
           }
-        } else {
-          try {
-            const result = await this.showInputOverlay(a, widgets, variables, collections, getCollection, problems);
-            Object.assign(variables, result.variables);
-            Object.assign(collections, result.collections);
-            if(jeRoutineLogging) {
-              let varList = [];
-              let valueList = [];
-              a.fields.forEach(f=>{
-                if(f.variable) {
-                  varList.push(f.variable);
-                  valueList.push(JSON.stringify(variables[f.variable]));
-                }
-              });
-              jeLoggingRoutineOperationSummary(`${varList.join(', ')}`,`${valueList.join(', ')}`);
-            }
-          } catch(e) {
-            abortRoutine = true;
-            if(jeRoutineLogging)
-              jeLoggingRoutineOperationSummary("INPUT cancelled");
-          }
+        } catch(e) {
+          abortRoutine = true;
+          if(jeRoutineLogging)
+            jeLoggingRoutineOperationSummary("INPUT cancelled");
         }
       }
 

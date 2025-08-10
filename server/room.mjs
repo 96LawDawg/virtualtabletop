@@ -840,32 +840,45 @@ export default class Room {
   pendingInputs = new Map();
 
   requestInput(player, args) {
-    const target = this.players.find(p=>p.name === args.player);
-    if(!target) {
+    const targets = args.players.map(name => this.players.find(p => p.name === name)).filter(Boolean);
+    if(targets.length === 0) {
       player.send('inputCanceled', { id: args.id });
       return;
     }
-    this.pendingInputs.set(args.id, { requester: player, target });
+    const pending = { requester: player, remaining: new Set(targets), variables: {}, collections: {} };
+    this.pendingInputs.set(args.id, pending);
+    const targetNames = targets.map(p => p.name);
     for(const p of this.players)
-      if(p !== target)
-        p.send('awaitInput', { id: args.id, player: target.name });
-    target.send('promptInput', {
-      id: args.id,
-      widgetID: args.widgetID,
-      input: args.input,
-      variables: args.variables,
-      collections: args.collections
-    });
+      if(!pending.remaining.has(p))
+        p.send('awaitInput', { id: args.id, players: targetNames });
+    for(const t of targets)
+      t.send('promptInput', {
+        id: args.id,
+        widgetID: args.widgetID,
+        input: args.input,
+        variables: args.variables,
+        collections: args.collections
+      });
   }
 
   submitInput(player, args) {
     const pending = this.pendingInputs.get(args.id);
-    if(!pending || pending.target !== player)
+    if(!pending || !pending.remaining.has(player))
       return;
-    pending.requester.send('inputResult', { id: args.id, variables: args.variables, collections: args.collections });
-    for(const p of this.players)
-      p.send('inputFinished', { id: args.id });
-    this.pendingInputs.delete(args.id);
+    Object.assign(pending.variables, args.variables);
+    Object.assign(pending.collections, args.collections);
+    pending.remaining.delete(player);
+    if(pending.remaining.size === 0) {
+      pending.requester.send('inputResult', { id: args.id, variables: pending.variables, collections: pending.collections });
+      for(const p of this.players)
+        p.send('inputFinished', { id: args.id });
+      this.pendingInputs.delete(args.id);
+    } else {
+      const names = [...pending.remaining].map(p => p.name);
+      for(const p of this.players)
+        if(!pending.remaining.has(p))
+          p.send('awaitInput', { id: args.id, players: names });
+    }
   }
 
   cancelInput(player, args) {

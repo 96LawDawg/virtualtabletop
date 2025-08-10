@@ -1,5 +1,5 @@
 import { toServer } from './connection.js';
-import { $, $a, on, onLoad, unescapeID } from './domhelpers.js';
+import { $, $a, on, onLoad, unescapeID, asArray } from './domhelpers.js';
 import { getElementTransformRelativeTo } from './geometry.js';
 import { playerName } from './overlays/players.js';
 
@@ -22,6 +22,7 @@ let triggerGameStartRoutineOnNextStateLoad = false;
 let undoProtocol = [];
 
 let awaitingInputID = null;
+let awaitingInputPlayers = [];
 const pendingInputRequests = new Map();
 
 function generateUniqueWidgetID() {
@@ -582,7 +583,7 @@ export function sendPropertyUpdate(widgetID, property, value) {
 export function widgetFilter(callback) {
   return Array.from(widgets.values()).filter(w=>!w.isBeingRemoved).filter(callback);
 }
-export function requestInputFromPlayer(player, widgetID, input, variables, collections) {
+export function requestInputFromPlayer(players, widgetID, input, variables, collections) {
   const collectionIDs = {};
   for(const c in collections)
     collectionIDs[c] = collections[c].map(w=>w.get('id'));
@@ -590,15 +591,14 @@ export function requestInputFromPlayer(player, widgetID, input, variables, colle
   const id = rand().toString(36).substring(2, 7);
   return new Promise((resolve, reject) => {
     pendingInputRequests.set(id, { resolve, reject });
-    toServer('requestInput', { id, player, widgetID, input, variables, collections: collectionIDs });
+    toServer('requestInput', { id, players: asArray(players), widgetID, input, variables, collections: collectionIDs });
   });
 }
 
 function receiveAwaitInput(args) {
-  if(playerName === args.player)
-    return;
   awaitingInputID = args.id;
-  $('#waitingInputMessage').textContent = `Waiting on input from ${args.player}`;
+  awaitingInputPlayers = args.players || [];
+  $('#waitingInputMessage').textContent = `Waiting on input from ${awaitingInputPlayers.join(', ')}`;
   showOverlay('waitingInputOverlay');
 }
 
@@ -606,6 +606,7 @@ function receiveInputFinished(args) {
   if(awaitingInputID === args.id) {
     showOverlay();
     awaitingInputID = null;
+    awaitingInputPlayers = [];
   }
   cancelInputOverlay();
 }
