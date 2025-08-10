@@ -54,8 +54,12 @@ export default class Player {
         this.trace('client', args);
       if(func == 'unlinkState')
         await this.room.unlinkState(this, args);
-      if(func == 'delegateRoutine')
-        this.room.delegateRoutine(this, args);
+      if(func == 'requestInput')
+        this.room.requestInput(this, args);
+      if(func == 'submitInput')
+        this.room.submitInput(this, args);
+      if(func == 'cancelInput')
+        this.room.cancelInput(this, args);
     } catch(e) {
       if(e instanceof Logging.UserError) {
         this.send('error', `${e.code} - ${e.message}`);

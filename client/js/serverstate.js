@@ -1,6 +1,7 @@
 import { toServer } from './connection.js';
-import { $, $a, onLoad, unescapeID } from './domhelpers.js';
+import { $, $a, on, onLoad, unescapeID } from './domhelpers.js';
 import { getElementTransformRelativeTo } from './geometry.js';
+import { playerName } from './overlays/players.js';
 
 let roomID = self.location.pathname.replace(/.*\//, '');
 let isLoading = true;
@@ -19,6 +20,9 @@ let overlayShownForEmptyRoom = false;
 let triggerGameStartRoutineOnNextStateLoad = false;
 
 let undoProtocol = [];
+
+let awaitingInputID = null;
+const pendingInputRequests = new Map();
 
 function generateUniqueWidgetID() {
   let id;
@@ -578,19 +582,93 @@ export function sendPropertyUpdate(widgetID, property, value) {
 export function widgetFilter(callback) {
   return Array.from(widgets.values()).filter(w=>!w.isBeingRemoved).filter(callback);
 }
+export function requestInputFromPlayer(player, widgetID, input, variables, collections) {
+  const collectionIDs = {};
+  for(const c in collections)
+    collectionIDs[c] = collections[c].map(w=>w.get('id'));
+  sendDelta();
+  const id = rand().toString(36).substring(2, 7);
+  return new Promise((resolve, reject) => {
+    pendingInputRequests.set(id, { resolve, reject });
+    toServer('requestInput', { id, player, widgetID, input, variables, collections: collectionIDs });
+  });
+}
 
-async function receiveDelegateRoutine(args) {
+function receiveAwaitInput(args) {
+  if(playerName === args.player)
+    return;
+  awaitingInputID = args.id;
+  $('#waitingInputMessage').textContent = `Waiting on input from ${args.player}`;
+  showOverlay('waitingInputOverlay');
+}
+
+function receiveInputFinished(args) {
+  if(awaitingInputID === args.id) {
+    showOverlay();
+    awaitingInputID = null;
+  }
+  cancelInputOverlay();
+}
+
+function receivePromptInput(args) {
   const collections = {};
   for(const key in (args.collections || {}))
     collections[key] = (args.collections[key] || []).map(id=>widgets.get(id)).filter(Boolean);
+
+  function getCollection(collection) {
+    let newCollection = null;
+    if(Array.isArray(collections[collection]))
+      newCollection = collection;
+    else if(Array.isArray(collection)) {
+      newCollection = '$collection_' + rand().toString(36).substring(2, 7);
+      collections[newCollection] = widgetFilter(w=>collection.indexOf(w.id) != -1);
+    }
+    return newCollection;
+  }
+
   const widget = widgets.get(args.widgetID);
-  if(widget)
-    await widget.evaluateRoutine(args.routine, args.variables || {}, collections);
+  if(!widget) {
+    toServer('cancelInput', { id: args.id });
+    return;
+  }
+  widget.showInputOverlay(args.input, widgets, args.variables || {}, collections, getCollection, []).then(result => {
+    const collectionIDs = {};
+    for(const c in result.collections)
+      collectionIDs[c] = result.collections[c].map(w=>w.get('id'));
+    toServer('submitInput', { id: args.id, variables: result.variables, collections: collectionIDs });
+  }).catch(_ => {
+    toServer('cancelInput', { id: args.id });
+  });
 }
+
+function receiveInputResult(args) {
+  const pending = pendingInputRequests.get(args.id);
+  if(!pending)
+    return;
+  pendingInputRequests.delete(args.id);
+  const collections = {};
+  for(const key in (args.collections || {}))
+    collections[key] = (args.collections[key] || []).map(id=>widgets.get(id)).filter(Boolean);
+  pending.resolve({ variables: args.variables || {}, collections });
+}
+
+function receiveInputCanceled(args) {
+  const pending = pendingInputRequests.get(args.id);
+  if(!pending)
+    return;
+  pendingInputRequests.delete(args.id);
+  pending.reject();
+}
+
+on('#waitingInputCancel', 'click', () => { if(awaitingInputID) toServer('cancelInput', { id: awaitingInputID }); });
 
 onLoad(function() {
   onMessage('delta', receiveDeltaFromServer);
   onMessage('state', receiveStateFromServer);
-  onMessage('delegateRoutine', receiveDelegateRoutine);
+  onMessage('awaitInput', receiveAwaitInput);
+  onMessage('inputFinished', receiveInputFinished);
+  onMessage('promptInput', receivePromptInput);
+  onMessage('inputResult', receiveInputResult);
+  onMessage('inputCanceled', receiveInputCanceled);
   setScale();
 });

@@ -1,7 +1,7 @@
 import { $, removeFromDOM, asArray, escapeID, mapAssetURLs } from '../domhelpers.js';
 import { StateManaged } from '../statemanaged.js';
 import { playerName, playerColor, activePlayers, activeColors, mouseCoords } from '../overlays/players.js';
-import { batchStart, batchEnd, widgetFilter, widgets, sendDelta } from '../serverstate.js';
+import { batchStart, batchEnd, widgetFilter, widgets, sendDelta, requestInputFromPlayer } from '../serverstate.js';
 import { showOverlay, shuffleWidgets, sortWidgets } from '../main.js';
 import { tracingEnabled } from '../tracing.js';
 import { toHex } from '../color.js';
@@ -1420,40 +1420,36 @@ export class Widget extends StateManaged {
       if(a.func == 'INPUT') {
         setDefaults(a, { player: playerName });
         if(a.player && a.player !== playerName) {
-          const remainingRoutine = routine.slice(index);
-          const collectionIDs = {};
-          for(const c in collections)
-            collectionIDs[c] = collections[c].map(w=>w.get('id'));
-          sendDelta();
-          toServer('delegateRoutine', {
-            player: a.player,
-            widgetID: this.get('id'),
-            routine: remainingRoutine,
-            variables,
-            collections: collectionIDs
-          });
-          abortRoutine = true;
-          break;
-        }
-        try {
-          const result = await this.showInputOverlay(a, widgets, variables, collections, getCollection, problems);
-          Object.assign(variables, result.variables);
-          Object.assign(collections, result.collections);
-          if(jeRoutineLogging) {
-            let varList = [];
-            let valueList = [];
-            a.fields.forEach(f=>{
-              if(f.variable) {
-                varList.push(f.variable);
-                valueList.push(JSON.stringify(variables[f.variable]));
-              }
-            });
-            jeLoggingRoutineOperationSummary(`${varList.join(', ')}`,`${valueList.join(', ')}`);
+          try {
+            const result = await requestInputFromPlayer(a.player, this.get('id'), a, variables, collections);
+            Object.assign(variables, result.variables);
+            Object.assign(collections, result.collections);
+          } catch(e) {
+            abortRoutine = true;
+            if(jeRoutineLogging)
+              jeLoggingRoutineOperationSummary("INPUT cancelled");
           }
-        } catch(e) {
-          abortRoutine = true;
-          if(jeRoutineLogging)
-            jeLoggingRoutineOperationSummary("INPUT cancelled");
+        } else {
+          try {
+            const result = await this.showInputOverlay(a, widgets, variables, collections, getCollection, problems);
+            Object.assign(variables, result.variables);
+            Object.assign(collections, result.collections);
+            if(jeRoutineLogging) {
+              let varList = [];
+              let valueList = [];
+              a.fields.forEach(f=>{
+                if(f.variable) {
+                  varList.push(f.variable);
+                  valueList.push(JSON.stringify(variables[f.variable]));
+                }
+              });
+              jeLoggingRoutineOperationSummary(`${varList.join(', ')}`,`${valueList.join(', ')}`);
+            }
+          } catch(e) {
+            abortRoutine = true;
+            if(jeRoutineLogging)
+              jeLoggingRoutineOperationSummary("INPUT cancelled");
+          }
         }
       }
 

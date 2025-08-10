@@ -837,16 +837,45 @@ export default class Room {
     this.sendMetaUpdate();
   }
 
-  delegateRoutine(player, args) {
+  pendingInputs = new Map();
+
+  requestInput(player, args) {
     const target = this.players.find(p=>p.name === args.player);
-    if(!target)
+    if(!target) {
+      player.send('inputCanceled', { id: args.id });
       return;
-    target.send('delegateRoutine', {
+    }
+    this.pendingInputs.set(args.id, { requester: player, target });
+    for(const p of this.players)
+      if(p !== target)
+        p.send('awaitInput', { id: args.id, player: target.name });
+    target.send('promptInput', {
+      id: args.id,
       widgetID: args.widgetID,
-      routine: args.routine,
+      input: args.input,
       variables: args.variables,
       collections: args.collections
     });
+  }
+
+  submitInput(player, args) {
+    const pending = this.pendingInputs.get(args.id);
+    if(!pending || pending.target !== player)
+      return;
+    pending.requester.send('inputResult', { id: args.id, variables: args.variables, collections: args.collections });
+    for(const p of this.players)
+      p.send('inputFinished', { id: args.id });
+    this.pendingInputs.delete(args.id);
+  }
+
+  cancelInput(player, args) {
+    const pending = this.pendingInputs.get(args.id);
+    if(!pending)
+      return;
+    pending.requester.send('inputCanceled', { id: args.id });
+    for(const p of this.players)
+      p.send('inputFinished', { id: args.id });
+    this.pendingInputs.delete(args.id);
   }
 
   roomFilename() {
