@@ -1187,6 +1187,12 @@ button:disabled:hover {
 #buttonInputOverlay h1{
   display: none;
 }
+#waitingInputOverlay{
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  background: #0008;
+}
 .modal{
   color: var(--modalTextColor);
   background: var(--modalBackgroundColor);
