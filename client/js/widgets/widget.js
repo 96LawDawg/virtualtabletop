@@ -2745,7 +2745,7 @@ export class Widget extends StateManaged {
       };
       on('#buttonInputGo', 'click', goHandler);
       on('#buttonInputCancel', 'click', cancelHandler);
-      showOverlay('buttonInputOverlay');
+      showOverlay('buttonInputOverlay', true);
       const inputs = $a('#buttonInputFields input, #buttonInputFields select');
       if(inputs.length) {
         inputs[0].focus();
