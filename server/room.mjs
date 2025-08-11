@@ -845,19 +845,29 @@ export default class Room {
       player.send('inputCanceled', { id: args.id });
       return;
     }
-    const pending = { requester: player, remaining: new Set(targets), responses: {} };
+    const pending = {
+      requester: player,
+      remaining: new Set(targets),
+      responses: {},
+      widgetID: args.widgetID,
+      input: args.input,
+      variables: args.variables,
+      collections: args.collections
+    };
     this.pendingInputs.set(args.id, pending);
     const targetNames = targets.map(p => p.name);
     for(const p of this.players)
       if(!pending.remaining.has(p))
-        p.send('awaitInput', { id: args.id, players: targetNames });
+        p.send('awaitInput', { id: args.id, players: targetNames, responses: pending.responses });
     for(const t of targets)
       t.send('promptInput', {
         id: args.id,
         widgetID: args.widgetID,
         input: args.input,
         variables: args.variables,
-        collections: args.collections
+        collections: args.collections,
+        responses: pending.responses,
+        players: targetNames
       });
   }
 
@@ -867,16 +877,26 @@ export default class Room {
       return;
     pending.responses[player.name] = { variables: args.variables, collections: args.collections };
     pending.remaining.delete(player);
+    const names = [...pending.remaining].map(p => p.name);
     if(pending.remaining.size === 0) {
-      pending.requester.send('inputResult', { id: args.id, responses: pending.responses });
       for(const p of this.players)
-        p.send('inputFinished', { id: args.id });
+        p.send('inputFinished', { id: args.id, responses: pending.responses });
+      pending.requester.send('inputResult', { id: args.id, responses: pending.responses });
       this.pendingInputs.delete(args.id);
     } else {
-      const names = [...pending.remaining].map(p => p.name);
       for(const p of this.players)
-        if(!pending.remaining.has(p))
-          p.send('awaitInput', { id: args.id, players: names });
+        if(pending.remaining.has(p))
+          p.send('promptInput', {
+            id: args.id,
+            widgetID: pending.widgetID,
+            input: pending.input,
+            variables: pending.variables,
+            collections: pending.collections,
+            responses: pending.responses,
+            players: names
+          });
+        else
+          p.send('awaitInput', { id: args.id, players: names, responses: pending.responses });
     }
   }
 
