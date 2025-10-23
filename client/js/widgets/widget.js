@@ -1,7 +1,7 @@
 import { $, removeFromDOM, asArray, escapeID, mapAssetURLs } from '../domhelpers.js';
 import { StateManaged } from '../statemanaged.js';
 import { playerName, playerColor, activePlayers, activeColors, mouseCoords } from '../overlays/players.js';
-import { batchStart, batchEnd, widgetFilter, widgets } from '../serverstate.js';
+import { batchStart, batchEnd, widgetFilter, widgets, sendDelta, requestInputFromPlayer } from '../serverstate.js';
 import { showOverlay, shuffleWidgets, sortWidgets } from '../main.js';
 import { tracingEnabled } from '../tracing.js';
 import { toHex } from '../color.js';
@@ -915,7 +915,8 @@ export class Widget extends StateManaged {
 
     const routine = this.get(property) !== null ? this.get(property) : property;
 
-    for(const original of routine) {
+    for(let index = 0; index < routine.length; ++index) {
+      const original = routine[index];
       var problems = [];
       let a = JSON.parse(JSON.stringify(original));
       if(typeof a == 'object')
@@ -1442,10 +1443,30 @@ export class Widget extends StateManaged {
       }
 
       if(a.func == 'INPUT') {
+        setDefaults(a, { player: playerName });
+        const players = Array.isArray(a.player) ? a.player : [ a.player ];
         try {
-          const result = await this.showInputOverlay(a, widgets, variables, collections, getCollection, problems);
-          Object.assign(variables, result.variables);
-          Object.assign(collections, result.collections);
+          if(players.length === 1 && players[0] === playerName) {
+            const result = await this.showInputOverlay(a, widgets, variables, collections, getCollection, problems);
+            Object.assign(variables, result.variables);
+            Object.assign(collections, result.collections);
+          } else {
+            const responses = await requestInputFromPlayer(players, this.get('id'), a, variables, collections);
+            variables.results = {};
+            for(const [name, res] of Object.entries(responses)) {
+              variables.results[name] = res.variables || {};
+              for(const [v, value] of Object.entries(res.variables || {})) {
+                if(typeof variables[v] !== 'object' || variables[v] === null)
+                  variables[v] = {};
+                variables[v][name] = value;
+              }
+              for(const [c, list] of Object.entries(res.collections || {})) {
+                if(typeof collections[c] !== 'object' || collections[c] === null)
+                  collections[c] = {};
+                collections[c][name] = list;
+              }
+            }
+          }
           if(jeRoutineLogging) {
             let varList = [];
             let valueList = [];
@@ -2749,7 +2770,7 @@ export class Widget extends StateManaged {
       };
       on('#buttonInputGo', 'click', goHandler);
       on('#buttonInputCancel', 'click', cancelHandler);
-      showOverlay('buttonInputOverlay');
+      showOverlay('buttonInputOverlay', true);
       const inputs = $a('#buttonInputFields input, #buttonInputFields select');
       if(inputs.length) {
         inputs[0].focus();
